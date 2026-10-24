@@ -42,20 +42,34 @@ save("airhorn", drive(mix(...[466, 470, 587, 591, 698].map((f) => osc(1.2, (t) =
 // slide whistle up
 save("slide", osc(0.6, (t) => 500 * Math.pow(2.6, t / 0.6), sin, (t) => Math.min(1, t * 20) * Math.max(0, 1 - Math.max(0, t - 0.5) * 10) * 0.6));
 
-// backing beat, 128 bpm, 32 s: kick, clap, hats, bass
-const BPM = 128, beat = 60 / BPM, LEN = 32, track = new Float32Array(LEN * SR);
+// riser: noise and a rising saw that swell into the drop
+save("riser", (() => { const L = 1.6, a = new Float32Array(Math.round(L * SR)); let y = 0, ph = 0; for (let i = 0; i < a.length; i++) { const t = i / SR, k = t / L; y += (0.02 + 0.5 * k * k) * (noise() - y); ph += (2 * Math.PI * (200 + 1800 * k * k)) / SR; a[i] = (y * 1.6 + saw(ph) * 0.25) * k * k; } return a; })());
+// snare roll accelerating into the drop
+save("snareroll", (() => { const L = 1.0, a = new Float32Array(Math.round(L * SR)); const hit = make(0.12, (t) => ({ v: (noise() * 0.8 + Math.sin(2 * Math.PI * 190 * t) * 0.5) * env(t, 0.001, 0.05) })); let t = 0, gap = 0.125; while (t < L) { const s0 = Math.round(t * SR), g = 0.3 + 0.7 * (t / L); for (let i = 0; i < hit.length && s0 + i < a.length; i++) a[s0 + i] += hit[i] * g; t += gap; gap = Math.max(0.03, gap * 0.82); } return a; })());
+// impact: sub drop plus a noise crack, for slams
+save("impact", drive(mix(osc(1.2, (t) => 40 + 160 * Math.exp(-t * 12), sin, (t) => env(t, 0.002, 0.4)), make(0.3, (t) => ({ v: noise() * env(t, 0.001, 0.06) * 0.9 }))), 2));
+// ding: bright bell for each fee line
+save("ding", mix(...[1, 2.01, 3.9].map((m, i) => osc(0.6, () => 1760 * m, sin, (t) => env(t, 0.001, 0.18 / (i + 1)) * 0.4 / (i + 1)))));
+
+// backing beat, 150 bpm, 28 s: four-on-the-floor kick, clap on 2 and 4, 16th and open hats,
+// sidechain-pumped saw bass and a chiptune square arp
+const BPM = 150, beat = 60 / BPM, LEN = 28, track = new Float32Array(LEN * SR);
 const add = (at, x, g = 1) => { const s = Math.round(at * SR); for (let i = 0; i < x.length && s + i < track.length; i++) track[s + i] += x[i] * g; };
-const kick = osc(0.4, (t) => 50 + 120 * Math.exp(-t * 30), sin, (t) => env(t, 0.002, 0.18));
-const clap = make(0.2, (t) => ({ v: noise() * (env(t, 0.001, 0.012) + env(Math.max(0, t - 0.012), 0.001, 0.07)) * 0.5 }));
-const hat = (() => { const a = new Float32Array(Math.round(0.05 * SR)); let p = 0; for (let i = 0; i < a.length; i++) { const n = noise(); a[i] = (n - p) * env(i / SR, 0.0005, 0.015) * 0.35; p = n; } return a; })();
-const bassNotes = [43.65, 43.65, 51.91, 38.89];
+const kick = drive(osc(0.35, (t) => 48 + 150 * Math.exp(-t * 35), sin, (t) => env(t, 0.001, 0.16)), 1.8);
+const clap = make(0.22, (t) => ({ v: noise() * (env(t, 0.001, 0.01) + env(Math.max(0, t - 0.011), 0.001, 0.01) + env(Math.max(0, t - 0.022), 0.001, 0.08)) * 0.45 }));
+const hp = (len, d) => { const a = new Float32Array(Math.round(len * SR)); let p = 0; for (let i = 0; i < a.length; i++) { const n = noise(); a[i] = (n - p) * env(i / SR, 0.0005, d) * 0.3; p = n; } return a; };
+const hat = hp(0.04, 0.012), openHat = hp(0.25, 0.09);
+// i - IV - vi - V in E minor-ish: root notes in Hz and arp chord tones
+const prog = [[82.41, [329.6, 392.0, 493.9, 659.3]], [65.41, [261.6, 329.6, 392.0, 523.3]], [73.42, [293.7, 370.0, 440.0, 587.3]], [61.74, [246.9, 311.1, 370.0, 493.9]]];
 for (let b = 0; b * beat < LEN; b++) {
-  const t = b * beat, bar = Math.floor(b / 4);
-  add(t, kick, 0.9);
-  if (b % 2 === 1) add(t, clap, 0.6);
-  add(t + beat / 2, hat, 0.8); add(t, hat, 0.4);
-  const f = bassNotes[bar % 4] * 2;
-  add(t + beat / 2, osc(beat / 2, () => f, (p) => saw(p) * 0.6 + sin(p) * 0.4, (tt) => env(tt, 0.005, 0.12) * 0.35));
+  const t = b * beat, bar = Math.floor(b / 4), [root, chord] = prog[bar % 4];
+  add(t, kick, 0.95);
+  if (b % 2 === 1) add(t, clap, 0.55);
+  add(t + beat / 2, openHat, 0.6);
+  for (let q = 0; q < 4; q++) add(t + (q * beat) / 4, hat, q % 2 ? 0.5 : 0.8);
+  // bass ducks under each kick, then swells back: the pumping feel
+  add(t, osc(beat, () => root * 2, (p) => saw(p) * 0.7 + sin(p / 2) * 0.5, (tt) => Math.min(1, tt / (beat * 0.6)) ** 2 * 0.32));
+  for (let q = 0; q < 4; q++) add(t + (q * beat) / 4, osc(beat / 4, () => chord[(b * 4 + q) % 4], sq, (tt) => env(tt, 0.002, 0.05) * 0.07));
 }
-save("beat", gain(drive(track, 1.1), 0.7));
+save("beat", gain(drive(track, 1.2), 0.75));
 console.log("sfx done");

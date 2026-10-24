@@ -8,11 +8,15 @@ const { fontFamily: TEXT } = loadText();
 
 const C = { paper: "#f7f8f1", ink: "#1b1d14", lime: "#b7cd32", limeInk: "#4a5706", offer: "#c93a22", night: "#1f2318" };
 const FPS = 30;
-const s = (sec: number) => Math.round(sec * FPS);
-export const REEL_FRAMES = s(30);
+// Animation inside a scene runs K times faster than it is written; scenes and audio are placed in real seconds.
+const K = 1.35;
+const s = (sec: number) => Math.round((sec * FPS) / K);
+const r = (sec: number) => Math.round(sec * FPS);
+const END = 25;
+export const REEL_FRAMES = r(END);
 
-// Scene boundaries in seconds; the voiceover line for each scene starts just after its boundary.
-const T = { hook: 0, fees: 3.3, deal: 7.3, meme: 11.2, reveal: 15.4, flow: 18.6, save: 21.6, cta: 25.1 };
+// Scene boundaries in real seconds, sized to the voiceover line each scene carries.
+const T = { hook: 0, fees: 2.1, deal: 6.3, meme: 9.6, reveal: 14.6, flow: 16.3, save: 19.4, cta: 22.4 };
 
 const useSpring = (at: number, damping = 11, mass = 0.6) => {
   const f = useCurrentFrame();
@@ -56,7 +60,7 @@ const Slam = ({ text, at, top, size = 128, color = C.ink, gap = 0.12, align = "c
   return (
     <div style={{ position: "absolute", top, left: 70, right: 70, display: "flex", flexWrap: "wrap", justifyContent: align === "center" ? "center" : "flex-start", columnGap: size * 0.28, rowGap: 0, fontFamily: DISPLAY, fontWeight: 800, fontSize: size, lineHeight: 1.02, letterSpacing: -size * 0.03, color }}>
       {words.map((w, i) => {
-        const start = s(at) + Math.round(i * gap * fps);
+        const start = s(at) + Math.round((i * gap * fps) / K);
         const p = spring({ frame: f - start, fps, config: { damping: 9, mass: 0.5 } });
         const hl = w.startsWith("*");
         const word = w.replace(/\*/g, "");
@@ -126,14 +130,14 @@ const Progress = () => {
 };
 
 const Scene = ({ from, to, children }: { from: number; to: number; children: ReactNode }) => (
-  <Sequence from={s(from)} durationInFrames={s(to) - s(from)} layout="none">{children}</Sequence>
+  <Sequence from={r(from)} durationInFrames={r(to) - r(from)} layout="none">{children}</Sequence>
 );
 
 // Children of a Scene see frames relative to the scene start, so times inside are local seconds.
 const Hook = () => (
   <AbsoluteFill style={{ transform: useShake([0.1]) }}>
     <Bg color={C.paper} />
-    <Floaters from={0.8} to={3.3} emojis={["😭", "💸", "🥲"]} />
+    <Floaters from={0.8} to={2.8} emojis={["😭", "💸", "🥲"]} />
     <Pill at={0.05} text="POV: it's 11pm in halls" x={170} y={170} size={48} tilt={-3} />
     <Slam text="Ordering takeaway *alone?*" at={0.3} top={340} size={150} />
     <Sticker name="dream-desert" at={0.6} x={140} y={860} w={800} tilt={4} />
@@ -195,33 +199,75 @@ const Deal = () => {
   );
 };
 
-// The tung-tung-tung parody: each knock slams a word and jolts the croc, then a record scratch stops it.
-const KNOCKS = [0.15, 0.55, 0.95, 1.35, 1.75];
+// Times in the meme are real seconds (rk converts them to animation time) because they sync to the "tung" line.
+const rk = (sec: number) => sec * K;
+const KNOCKS = [0.05, 0.33, 0.61, 0.89, 1.17];
+const SAHUR = 1.55, STOP = 2.45;
+
+// An original wooden-log character in the style of the Tung Tung Tung Sahur meme; `swing` 0..1 drives the bat.
+const Sahur = ({ swing }: { swing: number }) => (
+  <svg viewBox="0 0 420 640" style={{ width: "100%", overflow: "visible" }} aria-label="A wooden log character swinging a bat">
+    <g stroke="#1b1d14" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M160 520 L120 610 L80 612" fill="none" />
+      <path d="M260 520 L300 610 L340 612" fill="none" />
+      <rect x="110" y="90" width="200" height="450" rx="40" fill="#b5713a" />
+      <ellipse cx="210" cy="96" rx="100" ry="26" fill="#d9a066" />
+      <ellipse cx="210" cy="96" rx="56" ry="13" fill="none" strokeWidth="5" />
+      <path d="M140 160 L148 300 M280 200 L272 360 M150 380 L156 480 M262 420 L268 510" fill="none" strokeWidth="6" stroke="#7a4520" />
+      <circle cx="170" cy="230" r="34" fill="#fff" />
+      <circle cx="252" cy="222" r="38" fill="#fff" />
+      <circle cx="176" cy="236" r="13" fill="#1b1d14" stroke="none" />
+      <circle cx="246" cy="228" r="15" fill="#1b1d14" stroke="none" />
+      <ellipse cx="212" cy="330" rx="34" ry="46" fill="#3a1408" />
+      <path d="M118 300 Q 60 330 70 400" fill="none" />
+      <g transform={`rotate(${swing * 95} 300 300)`}>
+        <path d="M300 300 Q 350 290 370 250" fill="none" />
+        <rect x="350" y="40" width="40" height="230" rx="20" fill="#e3b27a" transform="rotate(12 370 250)" />
+      </g>
+    </g>
+  </svg>
+);
+
 const Meme = () => {
   const f = useCurrentFrame();
-  const stopped = f >= s(2.25);
-  const jolt = KNOCKS.reduce((a, k) => { const d = f - s(k); return d >= 0 && d < 8 ? a + (8 - d) * 3 : a; }, 0);
-  const flash = KNOCKS.some((k) => { const d = f - s(k); return d >= 0 && d < 3; });
-  const shake = useShake(KNOCKS, 40);
+  const stopped = f >= s(rk(STOP));
+  const sahurTime = f >= s(rk(SAHUR));
+  const sinceKnock = KNOCKS.reduce((m, k) => { const d = f - s(rk(k)); return d >= 0 ? Math.min(m, d) : m; }, 99);
+  const swing = sinceKnock < 4 ? 1 - sinceKnock / 4 : 0;
+  const jolt = sinceKnock < 8 ? (8 - sinceKnock) * 4 : 0;
+  const flash = sinceKnock < 2 || (f - s(rk(SAHUR)) >= 0 && f - s(rk(SAHUR)) < 3);
+  const big = spring({ frame: f - s(rk(SAHUR)), fps: FPS, config: { damping: 8, mass: 0.6 } });
+  const shake = useShake([...KNOCKS, SAHUR].map(rk), 44);
   return (
     <AbsoluteFill style={{ transform: stopped ? "none" : shake }}>
-      <AbsoluteFill style={{ background: stopped ? C.paper : flash ? "#3a3f2c" : C.night }} />
-      {!stopped && KNOCKS.map((k, i) => (
-        <Pop key={i} at={k} from={3} tilt={(i % 2 ? 1 : -1) * 8} style={{ left: [60, 400, 110, 380, 70][i], top: 150 + i * 165 }}>
-          <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 140, color: C.lime, WebkitTextStroke: "4px #000", textShadow: "8px 8px 0 #000" }}>TUNG</div>
+      <AbsoluteFill style={{ background: stopped ? C.paper : flash ? "#ffffff" : C.night }} />
+      {!stopped && !sahurTime && KNOCKS.map((k, i) => (
+        <Pop key={i} at={rk(k)} from={3} tilt={(i % 2 ? 1 : -1) * 8} style={{ left: [60, 420, 110, 400, 80][i], top: 150 + i * 150 }}>
+          <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 130, color: C.lime, WebkitTextStroke: "4px #000", textShadow: "8px 8px 0 #000" }}>TUNG</div>
         </Pop>
       ))}
-      {!stopped && (
-        <div style={{ position: "absolute", left: 240, top: 1000, width: 600, transform: `translateY(${-jolt}px) scale(${1 + jolt / 200}) rotate(${Math.sin(f / 2) * 6}deg)` }}>
-          <Img src={staticFile("stickers/helmet-sad.png")} style={{ width: "100%" }} />
-        </div>
+      {!stopped && !sahurTime && (
+        <>
+          <div style={{ position: "absolute", left: 40, top: 960, width: 460 }}><Sahur swing={swing} /></div>
+          <div style={{ position: "absolute", left: 520, top: 1180, width: 480, transform: `translate(${jolt}px, ${-jolt}px) rotate(${jolt / 2}deg)` }}>
+            <Img src={staticFile("stickers/helmet-sad.png")} style={{ width: "100%" }} />
+          </div>
+        </>
+      )}
+      {!stopped && sahurTime && (
+        <>
+          <div style={{ position: "absolute", left: 140, top: 520, width: 800, transform: `scale(${0.3 + 0.7 * big}) rotate(${(1 - big) * -25 + Math.sin(f / 2) * 3}deg)` }}><Sahur swing={Math.abs(Math.sin(f / 3))} /></div>
+          <Pop at={rk(SAHUR)} from={4} tilt={-6} style={{ left: 0, right: 0, top: 170, display: "flex", justifyContent: "center" }}>
+            <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 210, color: C.offer, WebkitTextStroke: "6px #000", textShadow: "12px 12px 0 #000" }}>SAHUR!!!</div>
+          </Pop>
+        </>
       )}
       {stopped && (
         <>
-          <Pop at={2.25} from={2} style={{ left: 0, right: 0, top: 380, display: "flex", justifyContent: "center" }}><div style={{ fontSize: 260 }}>🛑</div></Pop>
-          <Slam text="okay *STOP.*" at={2.3} top={720} size={170} />
-          <Slam text="there's a better way" at={2.9} top={1020} size={96} color={C.limeInk} gap={0.08} />
-          <Sticker name="dream-food" at={3.0} x={260} y={1250} w={560} tilt={-5} />
+          <Pop at={rk(STOP)} from={2} style={{ left: 0, right: 0, top: 360, display: "flex", justifyContent: "center" }}><div style={{ fontSize: 260 }}>🛑</div></Pop>
+          <Slam text="okay *STOP.*" at={rk(STOP + 0.1)} top={700} size={170} />
+          <Slam text="there's a better way" at={rk(STOP + 0.8)} top={1000} size={96} color={C.limeInk} gap={0.08} />
+          <Sticker name="dream-food" at={rk(STOP + 0.9)} x={260} y={1230} w={560} tilt={-5} />
         </>
       )}
     </AbsoluteFill>
@@ -230,7 +276,7 @@ const Meme = () => {
 
 const Reveal = () => {
   const f = useCurrentFrame();
-  const drive = interpolate(f, [s(1.2), s(2.6)], [-700, 1200], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic) });
+  const drive = interpolate(f, [s(0.5), s(1.9)], [-700, 1200], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic) });
   const logo = useSpring(0, 8, 0.7);
   return (
     <AbsoluteFill style={{ transform: useShake([0], 30) }}>
@@ -284,22 +330,22 @@ const Cta = () => {
   return (
     <AbsoluteFill>
       <Bg color={C.paper} />
-      <Floaters from={1.0} to={4.9} emojis={["❤️", "🔥", "🍔", "💚"]} seed={5} />
+      <Floaters from={0.8} to={3.4} emojis={["❤️", "🔥", "🍔", "💚"]} seed={5} />
       <Slam text="Order *together.*" at={0} top={200} size={150} />
       <Sticker name="scooter" at={0.5} x={260} y={560} w={560} tilt={-6} />
       <Pop at={1.0} style={{ left: 0, right: 0, top: 1180, display: "flex", justifyContent: "center" }}>
         <div style={{ transform: `scale(${pulse})`, background: C.ink, color: C.lime, fontFamily: DISPLAY, fontWeight: 800, fontSize: 110, padding: "30px 80px", borderRadius: 999 }}>Try Bulk 👉</div>
       </Pop>
-      <Pop at={1.5} style={{ left: 0, right: 0, top: 1450, textAlign: "center" }}><div style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 54, color: C.ink }}>bulk-theta.vercel.app</div></Pop>
+      <Pop at={1.5} style={{ left: 0, right: 0, top: 1450, textAlign: "center" }}><div style={{ display: "inline-block", fontFamily: TEXT, fontWeight: 800, fontSize: 54, color: C.ink, background: C.paper, padding: "12px 36px", borderRadius: 999, boxShadow: "0 10px 24px rgba(27,29,20,0.18)" }}>bulk-theta.vercel.app</div></Pop>
     </AbsoluteFill>
   );
 };
 
 const Sfx = ({ at, name, volume = 0.8 }: { at: number; name: string; volume?: number }) => (
-  <Sequence from={s(at)} layout="none"><Audio src={staticFile(`sfx/${name}.wav`)} volume={volume} /></Sequence>
+  <Sequence from={r(at)} layout="none"><Audio src={staticFile(`sfx/${name}.wav`)} volume={volume} /></Sequence>
 );
 const Vo = ({ at, line }: { at: number; line: string }) => (
-  <Sequence from={s(at)} layout="none"><Audio src={staticFile(`vo/${line}.wav`)} volume={1} /></Sequence>
+  <Sequence from={r(at)} layout="none"><Audio src={staticFile(`vo/${line}.wav`)} volume={1} /></Sequence>
 );
 
 export const Reel = () => (
@@ -311,40 +357,51 @@ export const Reel = () => (
     <Scene from={T.reveal} to={T.flow}><Reveal /></Scene>
     <Scene from={T.flow} to={T.save}><Flow /></Scene>
     <Scene from={T.save} to={T.cta}><Save /></Scene>
-    <Scene from={T.cta} to={30}><Cta /></Scene>
+    <Scene from={T.cta} to={END}><Cta /></Scene>
     <Progress />
     <Marquee />
 
-    {/* beat drops out for the meme so the knocks land, then comes back with the air horn */}
-    <Sequence from={0} durationInFrames={s(T.meme)} layout="none"><Audio src={staticFile("sfx/beat.wav")} volume={0.22} /></Sequence>
-    <Sequence from={s(T.reveal)} layout="none"><Audio src={staticFile("sfx/beat.wav")} trimBefore={s(T.reveal)} volume={0.26} /></Sequence>
+    {/* beat drops out for the meme so the knocks land, then a riser and snare roll throw back to the drop */}
+    <Sequence from={0} durationInFrames={r(T.meme)} layout="none"><Audio src={staticFile("sfx/beat.wav")} volume={0.3} /></Sequence>
+    <Sequence from={r(T.reveal)} layout="none"><Audio src={staticFile("sfx/beat.wav")} trimBefore={r(T.reveal)} volume={0.3} /></Sequence>
 
-    <Vo at={0.25} line="l1" />
-    <Vo at={T.fees + 0.1} line="l2" />
-    <Vo at={T.deal + 0.1} line="l3" />
+    <Vo at={0.15} line="l1" />
+    <Vo at={T.fees + 0.05} line="l2" />
+    <Vo at={T.fees + 2.9} line="damage" />
+    <Vo at={T.deal + 0.05} line="l3" />
+    <Vo at={T.deal + 2.6} line="bruh" />
     <Vo at={T.meme + 0.05} line="l4" />
-    <Vo at={T.reveal + 0.35} line="l5" />
-    <Vo at={T.flow + 0.1} line="l6" />
-    <Vo at={T.save + 0.1} line="l7" />
-    <Vo at={T.cta + 0.2} line="l8" />
+    <Vo at={T.meme + STOP + 0.1} line="l4b" />
+    <Vo at={T.reveal + 0.15} line="l5" />
+    <Vo at={T.flow + 0.05} line="l6" />
+    <Vo at={T.save + 0.05} line="l7" />
+    <Vo at={T.cta + 0.1} line="l8" />
 
-    <Sfx at={0.1} name="boom" volume={0.9} />
-    <Sfx at={1.6} name="pop" />
-    <Sfx at={T.fees + 0.9} name="pop" />
-    <Sfx at={T.fees + 1.5} name="pop" />
-    <Sfx at={T.fees + 2.6} name="boom" volume={0.9} />
-    <Sfx at={T.deal + 0.6} name="slide" volume={0.5} />
-    <Sfx at={T.deal + 2.0} name="buzzer" volume={0.6} />
-    {KNOCKS.map((k, i) => <Sfx key={i} at={T.meme + k} name="tung" volume={1} />)}
-    <Sfx at={T.meme + 2.2} name="scratch" volume={0.9} />
-    <Sfx at={T.meme + 2.9} name="slide" volume={0.5} />
-    <Sfx at={T.reveal} name="airhorn" volume={0.55} />
-    <Sfx at={T.reveal + 1.2} name="whoosh" volume={0.9} />
-    <Sfx at={T.flow + 0.7} name="whoosh" volume={0.7} />
-    <Sfx at={T.flow + 1.0} name="kaching" volume={0.7} />
-    <Sfx at={T.save + 1.4} name="kaching" volume={0.8} />
-    <Sfx at={T.save + 1.8} name="boing" volume={0.6} />
-    <Sfx at={T.cta + 1.0} name="pop" />
-    <Sfx at={T.cta + 2.6} name="boing" volume={0.6} />
+    {[T.fees, T.deal, T.flow, T.save, T.cta].map((at) => <Sfx key={at} at={at - 0.12} name="whoosh" volume={0.7} />)}
+    <Sfx at={0.05} name="boom" volume={0.45} />
+    <Sfx at={1.2} name="pop" />
+    {[0.22, 0.67, 1.11].map((d) => <Sfx key={d} at={T.fees + d} name="ding" volume={0.6} />)}
+    <Sfx at={T.fees + 1.93} name="impact" volume={0.45} />
+    <Sfx at={T.fees + 1.93} name="boom" volume={0.45} />
+    <Sfx at={T.deal + 0.44} name="slide" volume={0.5} />
+    <Sfx at={T.deal + 1.48} name="buzzer" volume={0.6} />
+    <Sfx at={T.deal + 1.93} name="pop" />
+    {KNOCKS.map((k) => <Sfx key={k} at={T.meme + k} name="tung" volume={0.8} />)}
+    <Sfx at={T.meme + SAHUR} name="impact" volume={0.45} />
+    <Sfx at={T.meme + SAHUR} name="boom" volume={0.45} />
+    <Sfx at={T.meme + STOP} name="scratch" volume={0.9} />
+    <Sfx at={T.reveal - 1.6} name="riser" volume={0.45} />
+    <Sfx at={T.reveal - 1.0} name="snareroll" volume={0.6} />
+    <Sfx at={T.reveal} name="airhorn" volume={0.38} />
+    <Sfx at={T.reveal} name="impact" volume={0.45} />
+    <Sfx at={T.reveal + 0.37} name="whoosh" volume={0.9} />
+    <Sfx at={T.flow + 0.52} name="pop" />
+    <Sfx at={T.flow + 0.74} name="kaching" volume={0.7} />
+    <Sfx at={T.flow + 1.63} name="ding" volume={0.6} />
+    <Sfx at={T.save + 1.04} name="kaching" volume={0.8} />
+    <Sfx at={T.save + 1.04} name="impact" volume={0.45} />
+    <Sfx at={T.save + 1.33} name="boing" volume={0.6} />
+    <Sfx at={T.cta + 0.74} name="pop" />
+    <Sfx at={T.cta + 1.6} name="boing" volume={0.6} />
   </AbsoluteFill>
 );
